@@ -54,7 +54,7 @@ void loop() {
       case '2': delete_short_addr(); menu(); break;
       case '3': commission_wo_short(); menu(); break;
       case '4': commission_all(); menu(); break;
-    }
+      case '5': flash(); menu(); break;    }
   }
 }
 
@@ -64,6 +64,7 @@ void menu() {
   Serial.println("2 Dele1te all short addresses");
   Serial.println("3 Commission w/o short adr");
   Serial.println("4 Commission all short addresses");
+  Serial.println("5 Flash all lights");
   Serial.println("----------------------------");  
 }
 
@@ -112,4 +113,17 @@ void commission_wo_short(){
 void commission_all(){
   Serial.println("Running: Commission all");
   dali.commission(0x00); //init_arg=0b00000000 : all 
+}
+
+void flash() {
+  Serial.println("Running: Flash all");
+  for(uint8_t i=0;i<5;i++) {
+    dali.set_level(254);
+    Serial.print(".");
+    delay(500);
+    dali.set_level(0);
+    Serial.print(".");
+    delay(500);
+  }
+  Serial.println();
 }
