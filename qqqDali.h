@@ -23,28 +23,36 @@ Changelog:
 
 class Dali {
 public:
-  void begin(int8_t tx_pin, int8_t rx_pin);
+  void     begin(int8_t tx_pin, int8_t rx_pin);
 
   //high level functions
-  void set_level(uint8_t level, uint8_t adr=0xFF); //set arc level
-  int16_t cmd(uint16_t cmd, uint8_t arg); //execute DALI command, use a DALI_xxx command define as cmd argument, returns negative DALI_RESULT_xxx or reply byte
-  uint8_t set_operating_mode(uint8_t v, uint8_t adr=0xFF); //returns 0 on success
-  uint8_t set_max_level(uint8_t v, uint8_t adr=0xFF); //returns 0 on success
-  uint8_t set_min_level(uint8_t v, uint8_t adr=0xFF); //returns 0 on success
-  uint8_t set_system_failure_level(uint8_t v, uint8_t adr=0xFF); //returns 0 on success
-  uint8_t set_power_on_level(uint8_t v, uint8_t adr=0xFF); //returns 0 on success
-
+  void     set_level(uint8_t level, uint8_t adr=0xFF); //set arc level
+  int16_t  cmd(uint16_t cmd, uint8_t arg); //execute DALI command, use a DALI_xxx command define as cmd argument, returns negative DALI_RESULT_xxx or reply byte
+  uint8_t  set_operating_mode(uint8_t v, uint8_t adr=0xFF); //returns 0 on success
+  uint8_t  set_max_level(uint8_t v, uint8_t adr=0xFF); //returns 0 on success
+  uint8_t  set_min_level(uint8_t v, uint8_t adr=0xFF); //returns 0 on success
+  uint8_t  set_system_failure_level(uint8_t v, uint8_t adr=0xFF); //returns 0 on success
+  uint8_t  set_power_on_level(uint8_t v, uint8_t adr=0xFF); //returns 0 on success
   
+  //commissioning
+  uint8_t  commission(uint8_t init_arg=0xff);
+  void     set_searchaddr(uint32_t adr);
+  void     set_searchaddr_diff(uint32_t adr_new,uint32_t adr_current);
+  uint8_t  compare();
+  void     program_short_address(uint8_t shortadr);
+  uint8_t  query_short_address();
+  uint32_t find_addr();
+
 
   //low level functions
   typedef void (*EventHandlerReceivedDataFuncPtr)(Dali *sender, uint8_t *data, uint8_t len);
   EventHandlerReceivedDataFuncPtr EventHandlerReceivedData;
 
-  uint8_t send(uint8_t* tx_msg, uint8_t tx_len_bytes);
-  uint8_t sendwait(uint8_t* tx_msg, uint8_t tx_len_bytes, uint32_t timeout_ms=500);
-  int16_t tx(uint8_t cmd0, uint8_t cmd1, uint32_t timeout_ms=500);
-  void ISR_timer();
-  void ISR_pinchange();
+  uint8_t   send(uint8_t* tx_msg, uint8_t tx_len_bytes);
+  uint8_t   sendwait(uint8_t* tx_msg, uint8_t tx_len_bytes, uint32_t timeout_ms=500);
+  int16_t   tx(uint8_t cmd0, uint8_t cmd1, uint32_t timeout_ms=500);
+  void      ISR_timer();
+  void      ISR_pinchange();
 
   #define DALI_HOOK_COUNT 3
 
@@ -52,16 +60,16 @@ public:
 private:
   //low level functions
   enum tx_stateEnum { TX_IDLE=0,TX_START,TX_START_X,TX_BIT,TX_BIT_X,TX_STOP1,TX_STOP1_X,TX_STOP2,TX_STOP2_X,TX_STOP3};
-  uint8_t tx_pin; //transmitter pin
-  uint8_t tx_msg[3]; //message to transmit
-  uint8_t tx_len; //number of bits to transmit
+  uint8_t   tx_pin; //transmitter pin
+  uint8_t   tx_msg[3]; //message to transmit
+  uint8_t   tx_len; //number of bits to transmit
   volatile uint8_t tx_pos; //current bit transmit position
   volatile tx_stateEnum tx_state; //current state
   volatile uint8_t tx_collision; //collistion occured
   volatile uint8_t tx_bus_low; //bus is low according to transmitter?
 
   enum rx_stateEnum { RX_IDLE,RX_START,RX_BIT};
-  uint8_t rx_pin; //receiver pin
+  uint8_t  rx_pin; //receiver pin
   volatile uint8_t rx_last_bus_low; //receiver as low at last pinchange
   volatile uint32_t rx_last_change_ts; //timestamp last pinchange
   volatile rx_stateEnum rx_state; //current state

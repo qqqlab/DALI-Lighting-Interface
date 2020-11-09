@@ -394,4 +394,138 @@ uint8_t Dali::set_value(uint16_t setcmd, uint16_t getcmd, uint8_t v, uint8_t adr
   return 0;
 }
 
+
+//======================================================================
+// Commissioning short addresses
+//======================================================================
+
+//Sets the slave Note 1 to the INITIALISE status for15 minutes.
+//Commands 259 to 270 are enabled only for a slave in this
+//status.
+
+//set search address
+void Dali::set_searchaddr(uint32_t adr) {
+  this->cmd(DALI_SEARCHADDRH,adr>>16);
+  this->cmd(DALI_SEARCHADDRM,adr>>8);
+  this->cmd(DALI_SEARCHADDRL,adr);
+}
+
+//set search address, but set only changed bytes
+void Dali::set_searchaddr_diff(uint32_t adr_new,uint32_t adr_current) {
+  if( (uint8_t)(adr_new>>16) !=  (uint8_t)(adr_current>>16) ) this->cmd(DALI_SEARCHADDRH,adr_new>>16);
+  if( (uint8_t)(adr_new>>8)  !=  (uint8_t)(adr_current>>8)  ) this->cmd(DALI_SEARCHADDRM,adr_new>>8);
+  if( (uint8_t)(adr_new)     !=  (uint8_t)(adr_current)     ) this->cmd(DALI_SEARCHADDRL,adr_new);
+}
+
+//Is the random address smaller or equal to the search address?
+uint8_t Dali::compare() {
+  return (0xff == this->cmd(DALI_COMPARE,0x00));
+}
+
+
+
+//The slave shall store the received 6-bit address (AAAAAA) as a short address if it is selected.
+void Dali::program_short_address(uint8_t shortadr) {
+  this->cmd(DALI_PROGRAM_SHORT_ADDRESS, (shortadr << 1) | 0x01);
+}
+
+//What is the short address of the slave being selected?
+uint8_t Dali::query_short_address() {
+  return this->cmd(DALI_QUERY_SHORT_ADDRESS, 0x00) >> 1;
+}
+
+//find addr with binary search
+uint32_t Dali::find_addr() {
+  uint32_t adr = 0x800000;
+  uint32_t addsub = 0x400000;
+  uint32_t adr_last = adr;
+  this->set_searchaddr(adr);
   
+  while(addsub) {
+    this->set_searchaddr_diff(adr,adr_last);
+    adr_last = adr;
+    uint8_t cmp = this->compare();
+    //Serial.print("cmp ");
+    //Serial.print(adr,HEX);
+    //Serial.print(" = ");
+    //Serial.println(cmp);
+    if(cmp) adr-=addsub; else adr+=addsub;
+    addsub >>= 1;
+  }
+  this->set_searchaddr_diff(adr,adr_last);
+  adr_last = adr;
+  if(!this->compare()) {
+    adr++;
+    this->set_searchaddr_diff(adr,adr_last);
+  }
+  return adr;
+}
+
+//init_arg=11111111 : all without short address
+//init_arg=00000000 : all 
+//init_arg=0AAAAAA1 : only for this shortadr
+uint8_t Dali::commission(uint8_t init_arg) {
+  uint8_t cnt = 0;
+  uint8_t arr[64];
+  uint8_t sa;
+  for(sa=0; sa<64; sa++) arr[sa]=0;
+  
+  //find existing short addresses
+//  if(init_arg==0xff) {
+    Serial.println("Short adr");
+    for(sa = 0; sa<64; sa++) {
+      int16_t rv = this->cmd(DALI_QUERY_STATUS,sa);
+      if(rv!=DALI_RESULT_NO_REPLY) {
+        arr[sa]=1;
+        cnt++;
+        Serial.print(sa);
+        Serial.print(" status=0x");
+        Serial.print(rv,HEX);
+        Serial.print(" minLevel=");
+        Serial.println(this->cmd(DALI_QUERY_MIN_LEVEL,sa));
+      }
+    }
+//  }
+
+  this->cmd(DALI_INITIALISE,init_arg);
+  this->cmd(DALI_RANDOMISE,0x00);
+  delay(100);
+
+  while(cnt<64) {
+    //Serial.print("addr=");
+    //Serial.println(this->get_random_address(0xff),HEX);
+
+    uint32_t adr = this->find_addr();
+    if(adr>0xffffff) break;
+    Serial.print("found adr=");
+    Serial.println(adr,HEX);
+
+    //Serial.print("short adr=");
+    //Serial.println(dali_query_short_address());
+  
+    //find available address
+    for(sa=0; sa<64; sa++) {
+      if(arr[sa]==0) break;
+    }
+    if(sa>=64) break;
+    arr[sa] = 1;
+    cnt++;
+ 
+    Serial.print("program short adr=");
+    Serial.println(sa);
+    this->program_short_address(sa);
+    //dali_program_short_address(0xff);
+  
+    Serial.print("read short adr=");
+    Serial.println(this->query_short_address());
+
+    this->cmd(DALI_WITHDRAW,0x00);
+  }
+  
+  this->cmd(DALI_TERMINATE,0x00);
+  return cnt;
+}
+
+
+
+//======================================================================
