@@ -16,14 +16,24 @@
  
 ----------------------------------------------------------------------------
 Changelog:
+2020-11-10 Split off hardware specific code into separate class
 2020-11-08 Created & tested on ATMega328 @ 8Mhz
 ###########################################################################*/
 #include <inttypes.h>
 
-
 class Dali {
 public:
-  void     begin(int8_t tx_pin, int8_t rx_pin);
+  //Hardware Abstraction Layer overrides
+  virtual void HAL_set_bus_low() const = 0; //set DALI bus to low state
+  virtual void HAL_set_bus_high() const = 0; //set DALI bus to high state
+  virtual uint8_t HAL_is_bus_low() const = 0; //is DALI bus in low state?
+  virtual uint32_t HAL_micros() const = 0; //get microsecond time stamp
+  void ISR_timer(); //call this function every 417us 
+  void ISR_pinchange(); //call this function on change of DALI bus
+
+  //callback on received data from DALI bus
+  typedef void (*EventHandlerReceivedDataFuncPtr)(Dali *sender, uint8_t *data, uint8_t len);
+  EventHandlerReceivedDataFuncPtr EventHandlerReceivedData;
 
   //high level functions
   void     set_level(uint8_t level, uint8_t adr=0xFF); //set arc level
@@ -43,24 +53,17 @@ public:
   uint8_t  query_short_address();
   uint32_t find_addr();
 
-
   //low level functions
-  typedef void (*EventHandlerReceivedDataFuncPtr)(Dali *sender, uint8_t *data, uint8_t len);
-  EventHandlerReceivedDataFuncPtr EventHandlerReceivedData;
-
   uint8_t   send(uint8_t* tx_msg, uint8_t tx_len_bytes);
-  uint8_t   sendwait(uint8_t* tx_msg, uint8_t tx_len_bytes, uint32_t timeout_ms=500);
-  int16_t   tx(uint8_t cmd0, uint8_t cmd1, uint32_t timeout_ms=500);
-  void      ISR_timer();
-  void      ISR_pinchange();
+  uint8_t   sendwait(uint8_t* tx_msg, uint8_t tx_len_bytes, uint32_t timeout_us=500000);
+  int16_t   tx(uint8_t cmd0, uint8_t cmd1, uint32_t timeout_us=500000);
 
-  #define DALI_HOOK_COUNT 3
-
-
-private:
+  //initialize variables
+  Dali() : tx_state(TX_IDLE), rx_state(RX_IDLE), tx_bus_low(0), tx_len(0), EventHandlerReceivedData(0) {};
+  
+protected:
   //low level functions
   enum tx_stateEnum { TX_IDLE=0,TX_START,TX_START_X,TX_BIT,TX_BIT_X,TX_STOP1,TX_STOP1_X,TX_STOP2,TX_STOP2_X,TX_STOP3};
-  uint8_t   tx_pin; //transmitter pin
   uint8_t   tx_msg[3]; //message to transmit
   uint8_t   tx_len; //number of bits to transmit
   volatile uint8_t tx_pos; //current bit transmit position
@@ -69,7 +72,6 @@ private:
   volatile uint8_t tx_bus_low; //bus is low according to transmitter?
 
   enum rx_stateEnum { RX_IDLE,RX_START,RX_BIT};
-  uint8_t  rx_pin; //receiver pin
   volatile uint8_t rx_last_bus_low; //receiver as low at last pinchange
   volatile uint32_t rx_last_change_ts; //timestamp last pinchange
   volatile rx_stateEnum rx_state; //current state
@@ -87,6 +89,10 @@ private:
   uint8_t set_value(uint16_t setcmd, uint16_t getcmd, uint8_t v, uint8_t adr); //set a parameter value, returns 0 on success
 }; 
 
+
+
+
+#define DALI_BAUD 1200
 
 #define DALI_RESULT_TIMEOUT -1 //Timeout waiting for DALI bus
 #define DALI_RESULT_INVALID_TOO_LONG -2 //Trying to send too many bytes (max 3)

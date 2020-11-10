@@ -28,9 +28,9 @@ Changelog:
 #define DALI_OUTPUT_PIN 3
 #define DALI_INPUT_PIN 4
 
-#include "qqqDali.h"
+#include "qqqDali_ATMega328.h"
 
-Dali dali; 
+Dali_ATMega328 dali; 
 
 void setup() {
   Serial.begin(115200);

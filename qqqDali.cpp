@@ -16,39 +16,25 @@
 
 ----------------------------------------------------------------------------
 Changelog:
+2020-11-10 Split off hardware specific code into separate class
 2020-11-08 Created & tested on ATMega328 @ 8Mhz
 ###########################################################################*/
 #include "qqqDali.h"
-#include "arduino.h"
 
 //###########################################################################
 // Helpers
 //###########################################################################
-#define DALI_BUS_LOW() digitalWrite(this->tx_pin,LOW); this->tx_bus_low=1
-#define DALI_BUS_HIGH() digitalWrite(this->tx_pin,HIGH); this->tx_bus_low=0
-#define DALI_IS_BUS_LOW() (digitalRead(this->rx_pin)==LOW)
-#define DALI_BAUD 1200
+#define DALI_TOL 15 //allow for 15% tolerance on timing (DALI spec calls for 10%, add 5% for uc clock tolerance)
 #define DALI_TE ((1000000+(DALI_BAUD))/(2*(DALI_BAUD)))  //417us
-#define DALI_TE_MIN (80*DALI_TE)/100  
-#define DALI_TE_MAX (120*DALI_TE)/100  
+#define DALI_TE_MIN ((100-DALI_TOL)*DALI_TE)/100 
+#define DALI_TE_MAX ((100+DALI_TOL)*DALI_TE)/100 
 #define DALI_IS_TE(x) ((DALI_TE_MIN)<=(x) && (x)<=(DALI_TE_MAX))
 #define DALI_IS_2TE(x) ((2*(DALI_TE_MIN))<=(x) && (x)<=(2*(DALI_TE_MAX)))
 
 //###########################################################################
 // Transmitter ISR
 //###########################################################################
-static Dali *IsrTimerHooks[DALI_HOOK_COUNT+1];
-
-// timer compare interrupt service routine    
-ISR(TIMER1_COMPA_vect) {        
- 
-  for(uint8_t i=0;i<DALI_HOOK_COUNT;i++) {
-    if(IsrTimerHooks[i]==NULL) {return;}
-    IsrTimerHooks[i]->ISR_timer();
-  }
-}
-
-//called every Te period (417us)
+//called by derived class every Te period (417us)
 void Dali::ISR_timer() {  
  if(this->bus_idle_te_cnt<0xff) this->bus_idle_te_cnt++;
   
@@ -59,26 +45,29 @@ void Dali::ISR_timer() {
   case TX_START: 
     //wait for timeslot, then send start bit
     if(this->bus_idle_te_cnt >= 22) {
-      DALI_BUS_LOW();
+      this->HAL_set_bus_low();
+      this->tx_bus_low=1;
       this->tx_state = TX_START_X;
     }
     break;
   case TX_START_X: 
-    DALI_BUS_HIGH();
+    this->HAL_set_bus_high();
+    this->tx_bus_low=0;
     this->tx_pos=0;
     this->tx_state = TX_BIT;
     break;
   case TX_BIT: 
-    if(this->tx_msg[this->tx_pos>>3] & 1<<(7-(this->tx_pos&0x7))) {DALI_BUS_LOW();} else {DALI_BUS_HIGH();}
+    if(this->tx_msg[this->tx_pos>>3] & 1<<(7-(this->tx_pos&0x7))) {this->HAL_set_bus_low();this->tx_bus_low=1;} else {this->HAL_set_bus_high();this->tx_bus_low=0;}
     this->tx_state = TX_BIT_X;
     break;
   case TX_BIT_X: 
-    if(this->tx_msg[this->tx_pos>>3] & 1<<(7-(this->tx_pos&0x7))) {DALI_BUS_HIGH();} else {DALI_BUS_LOW();}
+    if(this->tx_msg[this->tx_pos>>3] & 1<<(7-(this->tx_pos&0x7))) {this->HAL_set_bus_high();this->tx_bus_low=0;} else {this->HAL_set_bus_low();this->tx_bus_low=1;}
     this->tx_pos++;
     if(this->tx_pos < this->tx_len) {this->tx_state = TX_BIT;} else {this->tx_state = TX_STOP1;}
     break;  	
   case TX_STOP1: 
-    DALI_BUS_HIGH();
+    this->HAL_set_bus_high();
+    this->tx_bus_low=0;
     this->tx_state = TX_STOP1_X;
     break;  
   case TX_STOP1_X: 
@@ -105,7 +94,7 @@ void Dali::ISR_timer() {
     uint8_t bitlen = (this->rx_halfbitlen+1)>>1;
     if((bitlen & 0x7) == 0) {
       this->rx_len = bitlen>>3;
-      if(this->EventHandlerReceivedData!=NULL) this->EventHandlerReceivedData(this, (uint8_t*)this->rx_msg, this->rx_len);
+      if(this->EventHandlerReceivedData) this->EventHandlerReceivedData(this, (uint8_t*)this->rx_msg, this->rx_len);
     }else{
       //invalid bitlen
       //TODO handle this
@@ -116,29 +105,11 @@ void Dali::ISR_timer() {
 //###########################################################################
 // Receiver ISR
 //###########################################################################
-//pin PCINT
-//0-7 PCINT2_vect PCINT16-23
-//8-13 PCINT0_vect PCINT0-5
-//14-19 PCINT1_vect PCINT8-13
-static Dali *IsrPCINT0Hook;
-static Dali *IsrPCINT1Hook;
-static Dali *IsrPCINT2Hook;
-
-ISR(PCINT0_vect) {
-  if(IsrPCINT0Hook!=NULL) IsrPCINT0Hook->ISR_pinchange();
-} 
-ISR(PCINT1_vect) {
-  if(IsrPCINT1Hook!=NULL) IsrPCINT1Hook->ISR_pinchange();
-} 
-ISR(PCINT2_vect) {
-  if(IsrPCINT2Hook!=NULL) IsrPCINT2Hook->ISR_pinchange();
-} 
-
-
+//called by derived class on bus state change
 void Dali::ISR_pinchange() {
-  uint32_t ts = micros(); //get timestamp of change
+  uint32_t ts = this->HAL_micros(); //get timestamp of change
   this->bus_idle_te_cnt=0; //reset idle counter
-  uint8_t bus_low = DALI_IS_BUS_LOW();
+  uint8_t bus_low = this->HAL_is_bus_low();
 
   //exit if transmitting
   if(this->tx_state != TX_IDLE) {
@@ -206,63 +177,6 @@ void Dali::push_halfbit(uint8_t bit) {
 //###########################################################################
 // Dali Class
 //###########################################################################
-void Dali::begin(int8_t tx_pin, int8_t rx_pin) {
-  this->tx_pin = tx_pin;
-  this->rx_pin = rx_pin;
-  this->tx_state = TX_IDLE;
-  this->rx_state = RX_IDLE;
-    
-  //setup tx
-  if(this->tx_pin>=0) {
-    //setup tx pin
-    pinMode(this->tx_pin, OUTPUT);  
-    DALI_BUS_HIGH();	
-    
-    //setup tx timer interrupt	
-    TCCR1A = 0;
-    TCCR1B = 0;
-    TCNT1  = 0;
-
-    OCR1A = (F_CPU+(DALI_BAUD))/(2*(DALI_BAUD)); // compare match register 16MHz/256/2Hz
-    TCCR1B |= (1 << WGM12);   // CTC mode
-    TCCR1B |= (1 << CS10);    // 1:1 prescaler 
-    TIMSK1 |= (1 << OCIE1A);  // enable timer compare interrupt
-    
-    //setup timer interrupt hooks
-    for(uint8_t i=0;i<DALI_HOOK_COUNT;i++) {
-      if(IsrTimerHooks[i] == NULL) {
-        IsrTimerHooks[i] = this;
-        break;
-      }
-    }
-  }
-   
-  //setup rx  
-  if(this->rx_pin>=0) {
-    //setup rx pin
-    pinMode(this->rx_pin, INPUT);    
-
-    //setup rx pinchange interrupt
-    // 0- 7 PCINT2_vect PCINT16-23
-    // 8-13 PCINT0_vect PCINT0-5
-    //14-19 PCINT1_vect PCINT8-13
-    if(this->rx_pin<=7){
-      PCICR |= (1<<PCIE2);
-      PCMSK2 |= (1<< (this->rx_pin));
-      IsrPCINT2Hook = this; //setup pinchange interrupt hook
-    }else if(this->rx_pin<=13) {
-      PCICR |= (1<<PCIE0);
-      PCMSK0 |= (1<< (this->rx_pin-8));
-      IsrPCINT0Hook = this; //setup pinchange interrupt hook
-    }else if(this->rx_pin<=19) {
-      PCICR |= (1<<PCIE1);
-      PCMSK1 |= (1<< (this->rx_pin-14));
-      IsrPCINT1Hook = this; //setup pinchange interrupt hook
-    }
-  }
-}
-
-
 uint8_t Dali::send(uint8_t* tx_msg, uint8_t tx_len_bytes) {
   if(tx_len_bytes>3) return -(DALI_RESULT_INVALID_TOO_LONG);
   if(this->tx_state != TX_IDLE) return -(DALI_RESULT_TIMEOUT); 
@@ -273,41 +187,41 @@ uint8_t Dali::send(uint8_t* tx_msg, uint8_t tx_len_bytes) {
   return 0;
 }
 
-uint8_t Dali::sendwait(uint8_t* tx_msg, uint8_t tx_len_bytes, uint32_t timeout_ms) {
+uint8_t Dali::sendwait(uint8_t* tx_msg, uint8_t tx_len_bytes, uint32_t timeout_us) {
   if(tx_len_bytes>3) return -(DALI_RESULT_INVALID_TOO_LONG);
-  uint32_t ts = millis();
+  uint32_t ts = HAL_micros();
   //wait for idle
   while(this->tx_state != TX_IDLE) {
-    if(millis() - ts > timeout_ms) return -(DALI_RESULT_TIMEOUT); 
+    if(HAL_micros() - ts > timeout_us) return -(DALI_RESULT_TIMEOUT); 
   }
   //start transmit
   uint8_t rv = this->send(tx_msg,tx_len_bytes);
   if(rv) return rv;
   //wait for completion
   while(this->tx_state != TX_IDLE) {
-    if(millis() - ts > timeout_ms) return -(DALI_RESULT_TX_TIMEOUT); 
+    if(HAL_micros() - ts > timeout_us) return -(DALI_RESULT_TX_TIMEOUT); 
   }
   return 0;
 }
 
 //transmit 2 byte command, receive 1 byte reply
-int16_t Dali::tx(uint8_t cmd0, uint8_t cmd1, uint32_t timeout_ms) {
+int16_t Dali::tx(uint8_t cmd0, uint8_t cmd1, uint32_t timeout_us) {
   uint8_t tx[2];
   tx[0] = cmd0; 
   tx[1] = cmd1;
-  int16_t rv = this->sendwait(tx,2);
+  int16_t rv = this->sendwait(tx, 2, timeout_us);
   this->rx_halfbitlen = 0;
   if(rv) return -rv;;
 
   //wait up to 10 ms for start of reply
-  uint32_t ts = millis();
+  uint32_t ts = HAL_micros();
   while(this->rx_state == RX_IDLE) {
-    if(millis() - ts > 10) return DALI_RESULT_NO_REPLY;
+    if(HAL_micros() - ts > 10000) return DALI_RESULT_NO_REPLY;
   }
   //wait up to 15 ms for completion of reply
-  ts = millis();
+  ts = HAL_micros();
   while(this->rx_len == 0) {
-    if(millis() - ts > 15) return DALI_RESULT_NO_REPLY;
+    if(HAL_micros() - ts > 15000) return DALI_RESULT_NO_REPLY;
   }
   if(this->rx_len > 1) return DALI_RESULT_INVALID_REPLY;
   return this->rx_msg[0];
@@ -464,41 +378,40 @@ uint32_t Dali::find_addr() {
 //init_arg=11111111 : all without short address
 //init_arg=00000000 : all 
 //init_arg=0AAAAAA1 : only for this shortadr
+//returns number of new short addresses assigned
 uint8_t Dali::commission(uint8_t init_arg) {
   uint8_t cnt = 0;
   uint8_t arr[64];
   uint8_t sa;
   for(sa=0; sa<64; sa++) arr[sa]=0;
   
-  //find existing short addresses
-//  if(init_arg==0xff) {
-    Serial.println("Short adr");
+  //find existing short addresses when not assigning all
+  if(init_arg!=0b00000000) {
+    //Serial.println("Short adr");
     for(sa = 0; sa<64; sa++) {
       int16_t rv = this->cmd(DALI_QUERY_STATUS,sa);
       if(rv!=DALI_RESULT_NO_REPLY) {
         arr[sa]=1;
-        cnt++;
-        Serial.print(sa);
-        Serial.print(" status=0x");
-        Serial.print(rv,HEX);
-        Serial.print(" minLevel=");
-        Serial.println(this->cmd(DALI_QUERY_MIN_LEVEL,sa));
+        //Serial.print(sa);
+        //Serial.print(" status=0x");
+        //Serial.print(rv,HEX);
+        //Serial.print(" minLevel=");
+        //Serial.println(this->cmd(DALI_QUERY_MIN_LEVEL,sa));
       }
     }
-//  }
+  }
 
   this->cmd(DALI_INITIALISE,init_arg);
   this->cmd(DALI_RANDOMISE,0x00);
-  delay(100);
 
-  while(cnt<64) {
+  while(1) {
     //Serial.print("addr=");
     //Serial.println(this->get_random_address(0xff),HEX);
 
     uint32_t adr = this->find_addr();
-    if(adr>0xffffff) break;
-    Serial.print("found adr=");
-    Serial.println(adr,HEX);
+    if(adr>0xffffff) break; //no more random addresses found -> exit
+    //Serial.print("found adr=");
+    //Serial.println(adr,HEX);
 
     //Serial.print("short adr=");
     //Serial.println(dali_query_short_address());
@@ -507,17 +420,17 @@ uint8_t Dali::commission(uint8_t init_arg) {
     for(sa=0; sa<64; sa++) {
       if(arr[sa]==0) break;
     }
-    if(sa>=64) break;
+    if(sa>=64) break; //all 64 short addresses assigned -> exit
     arr[sa] = 1;
     cnt++;
  
-    Serial.print("program short adr=");
-    Serial.println(sa);
+    //Serial.print("program short adr=");
+    //Serial.println(sa);
     this->program_short_address(sa);
     //dali_program_short_address(0xff);
   
-    Serial.print("read short adr=");
-    Serial.println(this->query_short_address());
+    //Serial.print("read short adr=");
+    //Serial.println(this->query_short_address()); //TODO check read adr, handle if not the same...
 
     this->cmd(DALI_WITHDRAW,0x00);
   }
