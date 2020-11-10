@@ -50,26 +50,28 @@ void loop() {
   while (Serial.available() > 0) {
     int incomingByte = Serial.read();      
     switch(incomingByte) {
-      case '1': menu_flash(); menu(); break;    
+      case '1': menu_blink(); menu(); break;    
       case '2': menu_scan_short_addr(); menu(); break;
       case '3': menu_commission(); menu(); break;
-      case '4': menu_delete_short_addr(); menu(); break;
+      case '4': menu_commission_debug(); menu(); break;
+      case '5': menu_delete_short_addr(); menu(); break;
     }
   }
 }
 
 void menu() {
   Serial.println("----------------------------");
-  Serial.println("1 Flash all lights");
+  Serial.println("1 Blink all lamps");
   Serial.println("2 Scan short addresses");
   Serial.println("3 Commission short addresses");
-  Serial.println("4 Delete short addresses");
+  Serial.println("4 Commission short addresses (VERBOSE)");
+  Serial.println("5 Delete short addresses");
   Serial.println("----------------------------");  
 }
 
 
-void menu_flash() {
-  Serial.println("Running: Flash all");
+void menu_blink() {
+  Serial.println("Running: Blinking all lamps");
   for(uint8_t i=0;i<5;i++) {
     dali.set_level(254);
     Serial.print(".");
@@ -117,8 +119,18 @@ void menu_scan_short_addr() {
 
 //might need a couple of calls to find everything...
 void menu_commission(){
-  Serial.println("Running: Commission - be patient, this takes a while ....");
-//  uint8_t cnt = dali.commission(0xff); //init_arg=0b11111111 : all without short address  
+  Serial.println("Running: Commission");
+  Serial.println("Might need a couple of runs to find all lamps ...");
+  Serial.println("Be patient, this takes a while ...");
+  uint8_t cnt = dali.commission(0xff); //init_arg=0b11111111 : all without short address  
+  Serial.print("DONE, assigned ");Serial.print(cnt);Serial.println(" new short addresses");
+}
+
+//might need a couple of calls to find everything...
+void menu_commission_debug(){
+  Serial.println("Running: Commission (VERBOSE)");
+  Serial.println("Might need a couple of runs to find all lamps ...");
+  Serial.println("Be patient, this takes a while ...");
   uint8_t cnt = debug_commission(0xff); //init_arg=0b11111111 : all without short address  
   Serial.print("DONE, assigned ");Serial.print(cnt);Serial.println(" new short addresses");
 }
@@ -140,26 +152,25 @@ uint8_t debug_commission(uint8_t init_arg) {
   uint8_t arr[64];
   uint8_t sa;
   for(sa=0; sa<64; sa++) arr[sa]=0;
-  
-  //find existing short addresses when not assigning all
-  if(init_arg!=0b00000000) {
-    Serial.println("Find existing short adr");
-    for(sa = 0; sa<64; sa++) {
-      int16_t rv = dali.cmd(DALI_QUERY_STATUS,sa);
-      if(rv!=DALI_RESULT_NO_REPLY) {
-        arr[sa]=1;
-        Serial.print("sortadr=");
-        Serial.print(sa);
-        Serial.print(" status=0x");
-        Serial.print(rv,HEX);
-        Serial.print(" minLevel=");
-        Serial.println(dali.cmd(DALI_QUERY_MIN_LEVEL,sa));
-      }
-    }
-  }
 
+  dali.cmd(DALI_RESET,0x00);
   dali.cmd(DALI_INITIALISE,init_arg);
   dali.cmd(DALI_RANDOMISE,0x00);
+  
+  //find used short addresses (run always, seems to work better than without...)
+  Serial.println("Find existing short adr");
+  for(sa = 0; sa<64; sa++) {
+    int16_t rv = dali.cmd(DALI_QUERY_STATUS,sa);
+    if(rv!=DALI_RESULT_NO_REPLY) {
+      if(init_arg!=0b00000000) arr[sa]=1; //remove address from list if not in "all" mode
+      Serial.print("sortadr=");
+      Serial.print(sa);
+      Serial.print(" status=0x");
+      Serial.print(rv,HEX);
+      Serial.print(" minLevel=");
+      Serial.println(dali.cmd(DALI_QUERY_MIN_LEVEL,sa));
+    }
+  }
 
   Serial.println("Find random adr");
   while(1) {

@@ -24,7 +24,7 @@ Changelog:
 //###########################################################################
 // Helpers
 //###########################################################################
-#define DALI_TOL 15 //allow for 15% tolerance on timing (DALI spec calls for 10%, add 5% for uc clock tolerance)
+#define DALI_TOL 25 //percentage tolerance on timing. DALI specs call for 10%, but use higher value to allow for implementation micros() jitter. NOTE: Max value is 50% to differentiate between TE and 2TE.
 #define DALI_TE ((1000000+(DALI_BAUD))/(2*(DALI_BAUD)))  //417us
 #define DALI_TE_MIN ((100-DALI_TOL)*DALI_TE)/100 
 #define DALI_TE_MAX ((100+DALI_TOL)*DALI_TE)/100 
@@ -157,7 +157,7 @@ void Dali::ISR_pinchange() {
       this->rx_state = RX_IDLE;
       //TODO rx error
       return;
-    }		
+    }
     break;
   }
 }
@@ -177,34 +177,42 @@ void Dali::push_halfbit(uint8_t bit) {
 //###########################################################################
 // Dali Class
 //###########################################################################
+
+//non blocking send - check tx_state for completion, check tx_collision for collision errors
 uint8_t Dali::send(uint8_t* tx_msg, uint8_t tx_len_bytes) {
-  if(tx_len_bytes>3) return -(DALI_RESULT_INVALID_TOO_LONG);
+  if(tx_len_bytes>3) return -(DALI_RESULT_DATA_TOO_LONG);
   if(this->tx_state != TX_IDLE) return -(DALI_RESULT_TIMEOUT); 
   for(uint8_t i=0;i<tx_len_bytes;i++) this->tx_msg[i]=tx_msg[i];
   this->tx_len = tx_len_bytes<<3;
   this->tx_collision=0;
-  this->tx_state = TX_START;
+  this->tx_state = TX_START; //start transmission
   return 0;
 }
 
+//blocking send - wait until successful send or timeout
 uint8_t Dali::sendwait(uint8_t* tx_msg, uint8_t tx_len_bytes, uint32_t timeout_us) {
-  if(tx_len_bytes>3) return -(DALI_RESULT_INVALID_TOO_LONG);
+  if(tx_len_bytes>3) return -(DALI_RESULT_DATA_TOO_LONG);
   uint32_t ts = HAL_micros();
-  //wait for idle
-  while(this->tx_state != TX_IDLE) {
-    if(HAL_micros() - ts > timeout_us) return -(DALI_RESULT_TIMEOUT); 
+  
+  while(1) {
+    //wait for idle
+    while(this->tx_state != TX_IDLE) {
+      if(HAL_micros() - ts > timeout_us) return -(DALI_RESULT_TIMEOUT); 
+    }
+    //start transmit
+    uint8_t rv = this->send(tx_msg,tx_len_bytes);
+    if(rv) return rv;
+    //wait for completion
+    while(this->tx_state != TX_IDLE) {
+      if(HAL_micros() - ts > timeout_us) return -(DALI_RESULT_TX_TIMEOUT); 
+    }
+    //check for collisions
+    if(this->tx_collision==0) return 0;
   }
-  //start transmit
-  uint8_t rv = this->send(tx_msg,tx_len_bytes);
-  if(rv) return rv;
-  //wait for completion
-  while(this->tx_state != TX_IDLE) {
-    if(HAL_micros() - ts > timeout_us) return -(DALI_RESULT_TX_TIMEOUT); 
-  }
-  return 0;
+  return -(DALI_RESULT_TIMEOUT);
 }
 
-//transmit 2 byte command, receive 1 byte reply
+//blocking transmit 2 byte command, receive 1 byte reply (if reply was sent)
 int16_t Dali::tx(uint8_t cmd0, uint8_t cmd1, uint32_t timeout_us) {
   uint8_t tx[2];
   tx[0] = cmd0; 
@@ -226,8 +234,6 @@ int16_t Dali::tx(uint8_t cmd0, uint8_t cmd1, uint32_t timeout_us) {
   if(this->rx_len > 1) return DALI_RESULT_INVALID_REPLY;
   return this->rx_msg[0];
 }
-
-
 
 //=================================================================
 // High level
@@ -324,7 +330,7 @@ void Dali::set_searchaddr(uint32_t adr) {
   this->cmd(DALI_SEARCHADDRL,adr);
 }
 
-//set search address, but set only changed bytes
+//set search address, but set only changed bytes (takes less time)
 void Dali::set_searchaddr_diff(uint32_t adr_new,uint32_t adr_current) {
   if( (uint8_t)(adr_new>>16) !=  (uint8_t)(adr_current>>16) ) this->cmd(DALI_SEARCHADDRH,adr_new>>16);
   if( (uint8_t)(adr_new>>8)  !=  (uint8_t)(adr_current>>8)  ) this->cmd(DALI_SEARCHADDRM,adr_new>>8);
@@ -335,8 +341,6 @@ void Dali::set_searchaddr_diff(uint32_t adr_new,uint32_t adr_current) {
 uint8_t Dali::compare() {
   return (0xff == this->cmd(DALI_COMPARE,0x00));
 }
-
-
 
 //The slave shall store the received 6-bit address (AAAAAA) as a short address if it is selected.
 void Dali::program_short_address(uint8_t shortadr) {
@@ -384,57 +388,45 @@ uint8_t Dali::commission(uint8_t init_arg) {
   uint8_t arr[64];
   uint8_t sa;
   for(sa=0; sa<64; sa++) arr[sa]=0;
+
+  //start commissioning
+  this->cmd(DALI_RESET,0x00);
+  this->cmd(DALI_INITIALISE,init_arg);
+  this->cmd(DALI_RANDOMISE,0x00);
   
-  //find existing short addresses when not assigning all
-  if(init_arg!=0b00000000) {
-    //Serial.println("Short adr");
-    for(sa = 0; sa<64; sa++) {
-      int16_t rv = this->cmd(DALI_QUERY_STATUS,sa);
-      if(rv!=DALI_RESULT_NO_REPLY) {
-        arr[sa]=1;
-        //Serial.print(sa);
-        //Serial.print(" status=0x");
-        //Serial.print(rv,HEX);
-        //Serial.print(" minLevel=");
-        //Serial.println(this->cmd(DALI_QUERY_MIN_LEVEL,sa));
-      }
+  //find used short addresses (run always, seems to work better than without...)
+  for(sa = 0; sa<64; sa++) {
+    int16_t rv = this->cmd(DALI_QUERY_STATUS,sa);
+    if(rv!=DALI_RESULT_NO_REPLY) {
+      if(init_arg!=0b00000000) arr[sa]=1; //remove address from list if not in "all" mode
     }
   }
 
-  this->cmd(DALI_INITIALISE,init_arg);
-  this->cmd(DALI_RANDOMISE,0x00);
-
+  //find random addresses and assign unused short addresses
   while(1) {
-    //Serial.print("addr=");
-    //Serial.println(this->get_random_address(0xff),HEX);
-
     uint32_t adr = this->find_addr();
     if(adr>0xffffff) break; //no more random addresses found -> exit
-    //Serial.print("found adr=");
-    //Serial.println(adr,HEX);
 
-    //Serial.print("short adr=");
-    //Serial.println(dali_query_short_address());
-  
-    //find available address
+    //find first unused short address
     for(sa=0; sa<64; sa++) {
       if(arr[sa]==0) break;
     }
     if(sa>=64) break; //all 64 short addresses assigned -> exit
+
+    //mark short address as used
     arr[sa] = 1;
     cnt++;
  
-    //Serial.print("program short adr=");
-    //Serial.println(sa);
+    //assign short address
     this->program_short_address(sa);
-    //dali_program_short_address(0xff);
-  
-    //Serial.print("read short adr=");
+
     //Serial.println(this->query_short_address()); //TODO check read adr, handle if not the same...
 
+    //remove the device from the search
     this->cmd(DALI_WITHDRAW,0x00);
   }
-  
+
+  //terminate the DALI_INITIALISE command
   this->cmd(DALI_TERMINATE,0x00);
   return cnt;
 }

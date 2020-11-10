@@ -60,7 +60,7 @@ public:
 
   //initialize variables
   Dali() : tx_state(TX_IDLE), rx_state(RX_IDLE), tx_bus_low(0), tx_len(0), EventHandlerReceivedData(0) {};
-  
+
 protected:
   //low level functions
   enum tx_stateEnum { TX_IDLE=0,TX_START,TX_START_X,TX_BIT,TX_BIT_X,TX_STOP1,TX_STOP1_X,TX_STOP2,TX_STOP2_X,TX_STOP3};
@@ -79,6 +79,8 @@ protected:
   volatile uint8_t rx_len; //number of bytes received
   volatile int8_t rx_halfbitlen; //number of half bits received
   volatile uint8_t rx_last_halfbit; //last halfbit received
+  
+
 
   volatile uint8_t bus_idle_te_cnt; //number of Te since start of idle bus
 
@@ -94,13 +96,12 @@ protected:
 
 #define DALI_BAUD 1200
 
-#define DALI_RESULT_TIMEOUT -1 //Timeout waiting for DALI bus
-#define DALI_RESULT_INVALID_TOO_LONG -2 //Trying to send too many bytes (max 3)
-#define DALI_RESULT_TX_TIMEOUT -3 //Timeout during transmission
-#define DALI_RESULT_NO_REPLY -4 //cmd() did not receive a reply (i.e. received a 'NO' Backward Frame)
-#define DALI_RESULT_INVALID_CMD -5 //The cmd argument in the call to cmd() was invalid
-#define DALI_RESULT_INVALID_REPLY -6 //cmd() received an invalid reply (too long)
-
+#define DALI_RESULT_TIMEOUT          -1 //Timeout waiting for DALI bus
+#define DALI_RESULT_DATA_TOO_LONG    -2 //Trying to send too many bytes (max 3)
+#define DALI_RESULT_TX_TIMEOUT       -3 //Timeout during transmission
+#define DALI_RESULT_NO_REPLY         -4 //cmd() did not receive a reply (i.e. received a 'NO' Backward Frame)
+#define DALI_RESULT_INVALID_CMD      -5 //The cmd argument in the call to cmd() was invalid
+#define DALI_RESULT_INVALID_REPLY    -6 //cmd() received an invalid reply (too long)
 
 //bit8=extended commands, bit9=repeat
 #define DALI_OFF 0 //0  - Turns off lighting.
