@@ -22,7 +22,7 @@ Needs a DALI hardware interface such as Mikroe DALI click. Or use this very basi
                                           /
                    +---------+          |/
        uC TX >>----| 220 Ohm |----------K     PNP Transistor
-                   +---------+          |\
+                   +---------+          |\      30V 250mA
                                           V
                                           |
          GND >>---------------------------+----------------------<< DALI -
