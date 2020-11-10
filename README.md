@@ -12,8 +12,8 @@ Needs a DALI hardware interface such as Mikroe DALI click. Or use this very basi
 
 ```
 Micro-        5.6V         ___      DALI BUS
-controller    Zener  +----|___|---- 16-22V
-        ___   Diode  |    100
+controller    Zener  +----|___|---- 10-22V
+        ___   Diode  |     100
  RX ---|___|---|>|---+------------- DALI+
         10K          |  
         ___        |/
@@ -22,8 +22,9 @@ controller    Zener  +----|___|---- 16-22V
                      V
 GND -----------------+------------- DALI-
  ```
- NOTES: 
- - For this interface, reverse the polarity of TX in the code.
- - Might not work with all DALI components because of unmatched voltage levels.
- 
+NOTE: For this interface, reverse the polarity of TX in the code.
+
+### Explanation of the circuit
+
+The DALI bus needs to be powered with a 16V (9.5V to 22.5V) power supply, current limited to 250mA. In the circuit the 100 ohm resister acts as the current limiter. A logic low is -6.5V to 6.5V, a logic high is 9.5V to 22.5V. The zener diode takes removes the 6.5V offset, and the 10K resistor together with the shunt diodes in the GPIO port protect the microcontroller from overcurrent & overvoltage.
  
