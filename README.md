@@ -1,7 +1,7 @@
 # DALI-arduino
 DALI LED Lighting Interface. Control LED Drivers with a microcontroller.
 
-Core code in qqqDali.cpp and qqqDali.h does not depend on Arduino, can be used in any C++ project copying qqqDali_ATMega328.h by adding hardware specific code.
+The code in qqqDali.cpp and qqqDali.h does not depend on Arduino, can be used in any C++ project by copying qqqDali_ATMega328.h and adding hardware specific code for a periodic interrupt and pin change interrupt.
 
 Examples for Arduino ATMEGA328 included:
 - Dimmer: Dims all lamps up and down
