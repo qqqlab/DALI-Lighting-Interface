@@ -11,21 +11,16 @@ Examples for Arduino ATMEGA328 included:
 Needs a DALI hardware interface such as Mikroe DALI click. Or use this very basic DALI interface design for your experiments. 
 
 ```
-  DALI BUS Power   +---------+
-      12-22V >>----| 100 Ohm |-------------+--------------------<< DALI +
-                   +---------+             |
-                                    \      |
-                   +---------+   |\  |     |
-       uC RX >>----| 10K Ohm |---|  >|-- --+  5.6V Zener Diode
-                   +---------+   |/  |     |                 
-                                      \    |                       DALI BUS
-                                          /
-                   +---------+          |/
-       uC TX >>----| 220 Ohm |----------K     PNP Transistor
-                   +---------+          |\      30V 250mA
-                                          V
-                                          |
-         GND >>---------------------------+----------------------<< DALI -
+Micro-        5.6V         ___      DALI BUS
+controller    Zener  +----|___|---- 16-22V
+        ___   Diode  |    100
+ RX ---|___|---|>|---+------------- DALI+
+        10K          |  
+        ___        |/
+ TX ---|___|-------|    PNP Transistor
+        220        |\   30V 250mA
+                     V
+GND -----------------+------------- DALI-
  ```
  NOTES: 
  - For this interface, reverse the polarity of TX in the code.
