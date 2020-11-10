@@ -12,20 +12,20 @@ Needs a DALI hardware interface such as Mikroe DALI click. Or use this very basi
 
 ```
   DALI BUS Power   +---------+
-      12-22V >>----+ 100 Ohm +--------+--------------------<< DALI +
-                   +---------+        |
-                                      |
-                   +---------+        |
-       uC RX >>----+ 10K Ohm +--------+ 
-                   +---------+        |                 
-                                      |                       DALI BUS
-                                     /
-                                   |/
-       uC TX >>--------------------K    PNP Transistor
-                                   |\
-                                     V
-                                     |
-         GND >>----------------------+----------------------<< DALI -
+      12-22V >>----| 100 Ohm |-------------+--------------------<< DALI +
+                   +---------+             |
+                                    \      |
+                   +---------+   |\  |     |
+       uC RX >>----| 10K Ohm |---|  >|-- --+  5.6V Zener Diode
+                   +---------+   |/  |     |                 
+                                      \    |                       DALI BUS
+                                          /
+                   +---------+          |/
+       uC TX >>----| 220 Ohm |----------K     PNP Transistor
+                   +---------+          |\
+                                          V
+                                          |
+         GND >>---------------------------+----------------------<< DALI -
  ```
  NOTES: 
  - For this interface, reverse the polarity of TX in the code.
