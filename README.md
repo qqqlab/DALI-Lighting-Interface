@@ -1,9 +1,9 @@
-# DALI-arduino
+# DALI Lighting Interface
 DALI LED Lighting Interface. Control LED Drivers with a microcontroller.
 
-The code in qqqDali.cpp and qqqDali.h does not depend on Arduino, can be used in any C++ project by copying qqqDali_ATMega328.h and adding hardware specific code for a periodic interrupt and pin change interrupt.
+The code in qqqDali.cpp and qqqDali.h does not depend on Arduino, can be used in any C++ project by writing hardware specific hooks for a periodic interrupt.
 
-Examples for Arduino ATMEGA328 included:
+Examples included:
 - Dimmer: Dims all lamps up and down
 - Commissioning: Assign short addresses to lamps
 - Monitor: Monitor DALI bus data
@@ -25,7 +25,7 @@ GND ---+--------------------------+------------- DALI-
  ```
 NOTE: For this interface, reverse the polarity of TX in the code.
 
-### Explanation of the circuit
+### Explanation of the DIY circuit
 
 TX pin: The DALI bus needs to be powered with a 16V (9.5V to 22.5V) power supply, current limited to 250mA. In the circuit the 220 ohm resister is the current limiter (gives approx 50 mA with 12V power supply). Using a lower current allows us to use a common general purpose 100mA PNP transistor such as BC547 or similar. 
 
