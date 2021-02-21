@@ -27,9 +27,9 @@ NOTE: For this interface, reverse the polarity of TX in the code.
 
 ### Explanation of the DIY circuit
 
-TX pin: The DALI bus needs to be powered with a 16V (9.5V to 22.5V) power supply, current limited to 250mA. In the circuit the 220 ohm resister is the current limiter (gives approx 50 mA with 12V power supply). Using a lower current allows us to use a common general purpose 100mA PNP transistor such as BC547 or similar. 
+TX pin: The DALI bus needs to be powered with a 16V (9.5V to 22.5V) power supply, current limited to 250mA. In the circuit the 220 ohm resister is the current limiter, the max current is approx 50 mA with 12V power supply. Using a lower current allows to use a common general purpose 100mA PNP transistor such as BC547 or similar. 
 
-RX pin: On the DALI bus a logic low is -6.5V to 6.5V, a logic high is 9.5V to 22.5V. The zener diode takes removes the 6.5V offset of the DALI signal. The 10K resistors together with the shunt diodes in the GPIO port protect the microcontroller from overcurrent & overvoltage. The 100K pull down resistor ensures that a low DALI bus state results in a low RX pin.
+RX pin: On the DALI bus a logic low is -6.5V to 6.5V, and a logic high is 9.5V to 22.5V. This has to be converted to 0V low signal and 3 to 5V high signal for the microcontroller. The zener diode removes the +6.5V offset of the DALI signal. The 10K resistors together with the shunt diodes in the GPIO port protect the microcontroller from overcurrent & overvoltage. The 100K pull down resistor ensures that a low DALI bus state results in a low RX pin.
 
 DALI specifies that each device on the bus should not draw more than 2mA, and the minimum bus voltage is approx 10V. So every device on the bus will lower the supply voltage by 220 Ohm * 2mA = 0.5V, so this simple circuit with a 12V supply should work with up to 4 devices on the bus. If you want more devices, use a higher supply voltage and/or lower the 220 Ohm resistor value.
  
